@@ -18,6 +18,9 @@ class ButtonHandler {
             "ticket_cancel_close" -> {
                 event.message.delete().queue()
             }
+            "ticket_claim" -> {
+                TicketHandler().claimTicket(event)
+            }
         }
     }
 }

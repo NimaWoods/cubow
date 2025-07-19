@@ -2,6 +2,7 @@ package org.cubow.ticket
 
 import entity.EmbedBuilder
 import handler.Properties
+import org.cubow.utils.PermissionUtils
 import net.dv8tion.jda.api.Permission
 import net.dv8tion.jda.api.entities.Guild
 import net.dv8tion.jda.api.entities.Member
@@ -179,4 +180,54 @@ class TicketHandler {
 
         event.replyModal(modal).queue()
     }
+
+    fun claimTicket(event: ButtonInteractionEvent) {
+    val member = event.member!!
+    val channel = event.channel.asTextChannel()
+    val guild = channel.guild
+
+    if (PermissionUtils.hasTicketModeratePermission(member)) {
+        event.reply("Ticket beansprucht von " + member.asMention).queue()
+
+        // Erlaubt: Claimer (member)
+        channel.upsertPermissionOverride(member)
+            .setAllowed(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND)
+            .queue()
+
+        // Erlaubt: Ersteller (finde Ersteller aus Channel-PermissionOverrides)
+        // Suche alle Member-PermissionOverrides außer Claimer und Supporter
+        val allowedMemberIds = channel.permissionOverrides
+            .filter { it.isMemberOverride && it.allowed.contains(Permission.VIEW_CHANNEL) }
+            .map { it.member?.id }
+            .filterNotNull()
+            .toMutableSet()
+        allowedMemberIds.remove(member.id)
+
+        // Ersteller bleibt erlaubt, Supporter werden entfernt
+        val properties = handler.Properties.getInstance()
+        val ticketSupporterString = properties.get("ticket_supporter") ?: ""
+        val supporterIds = ticketSupporterString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+        // Entferne PermissionOverrides für alle Supporter außer Claimer
+        supporterIds.forEach { supporterId ->
+            if (supporterId != member.id) {
+                guild.getMemberById(supporterId)?.let { supporterMember ->
+                    channel.upsertPermissionOverride(supporterMember)
+                        .clear(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND)
+                        .queue()
+                }
+            }
+        }
+        // Alle anderen Member (außer Claimer und Ersteller) entfernen
+        allowedMemberIds.forEach { memberId ->
+            if (memberId != member.id) {
+                guild.getMemberById(memberId)?.let { m ->
+                    channel.upsertPermissionOverride(m)
+                        .clear(Permission.VIEW_CHANNEL, Permission.MESSAGE_SEND)
+                        .queue()
+                }
+            }
+        }
+    }
+}
 }
